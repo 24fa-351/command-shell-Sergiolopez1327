@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
 #include "environment.h"
 
 void execute_cd(char* path) {
@@ -31,13 +30,20 @@ void execute_pwd() {
 void execute_echo(char* args[]) {
     for (int i = 1; args[i] != NULL; i++) {
         char* arg = args[i];
-        if (arg[0] == '$') {  // Check if argument is an environment variable
-            char* value = get_env_var(arg + 1);  // Skip the '$' character
+        if (arg[0] == '$') { 
+            char* value = get_env_var(arg + 1); 
             if (value) {
                 printf("%s ", value);
+            } else {
+                printf("%s ", ""); 
             }
-        } else {
-            printf("%s ", arg);
+        } else { 
+            char* value = get_env_var(arg);
+            if (value) {
+                printf("%s ", value);
+            } else {
+                printf("%s ", arg); 
+            }
         }
     }
     printf("\n");
@@ -52,16 +58,22 @@ int execute_builtin(char* args[]) {
         return 1;
     } else if (strcmp(args[0], "set") == 0) {
         if (args[1] != NULL && args[2] != NULL) {
-            set_env_var(args[1], args[2]);
+            if (args[1][0] == '$') {
+                fprintf(stderr, "xsh: Variable name should not start with '$'\n");
+            } else {
+                set_env_var(args[1], args[2]);
+                printf("Set variable '%s' to '%s'.\n", args[1], args[2]);
+            }
         } else {
-            fprintf(stderr, "set: usage: set VAR VALUE\n");
+            fprintf(stderr, "xsh: Usage: set <variable> <value>\n");
         }
         return 1;
     } else if (strcmp(args[0], "unset") == 0) {
         if (args[1] != NULL) {
             unset_env_var(args[1]);
+            printf("Unset variable '%s'.\n", args[1]);
         } else {
-            fprintf(stderr, "unset: usage: unset VAR\n");
+            fprintf(stderr, "xsh: Usage: unset <variable>\n");
         }
         return 1;
     } else if (strcmp(args[0], "echo") == 0) {

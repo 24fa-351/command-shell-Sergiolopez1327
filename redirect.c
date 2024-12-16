@@ -1,18 +1,18 @@
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include "executor.h"
+#include <fcntl.h>
+#include "redirect.h"
 #include "split.h"
+#include "executor.h"
 
 #define MAX_ARGS 100
 #define MAX_INPUT 1024
 
-void handle_pipes_and_redirection(char* command) {
-    char* input_file = NULL;
-    char* output_file = NULL;
+void handle_pipes_and_redirection(char *command) {
+    char *input_file = NULL;
+    char *output_file = NULL;
     int bg = 0;
 
     if (command[strlen(command) - 1] == '&') {
@@ -20,87 +20,67 @@ void handle_pipes_and_redirection(char* command) {
         command[strlen(command) - 1] = '\0';
     }
 
-    // Input redirection
-    char* input_redirect = strchr(command, '<');
+    char *input_redirect = strchr(command, '<');
     if (input_redirect) {
         *input_redirect = '\0';
-        input_file = strtok(input_redirect + 1, " \t");
-        if (!input_file) {
-            fprintf(stderr, "xsh: Missing input file for redirection\n");
-            return;
-        }
+        input_file = strtok(input_redirect + 1, " ");
     }
 
-    // Output redirection
-    char* output_redirect = strchr(command, '>');
+    char *output_redirect = strchr(command, '>');
     if (output_redirect) {
         *output_redirect = '\0';
-        output_file = strtok(output_redirect + 1, " \t");
-        if (!output_file) {
-            fprintf(stderr, "xsh: Missing output file for redirection\n");
-            return;
-        }
+        output_file = strtok(output_redirect + 1, " ");
     }
 
-    // Split commands by pipes
-    char* commands[MAX_ARGS];
+    char *commands[MAX_ARGS];
     int num_commands = 0;
-    char* pipe_token = strtok(command, "|");
+    char *pipe_token = strtok(command, "|");
     while (pipe_token) {
         commands[num_commands++] = pipe_token;
         pipe_token = strtok(NULL, "|");
     }
 
     int input_fd = 0;
-    if (input_file) {
-        input_fd = open(input_file, O_RDONLY);
-        if (input_fd < 0) {
-            fprintf(stderr, "xsh: Cannot open input file '%s'\n", input_file);
-            perror("xsh");
-            return;
-        }
-    }
-
+    int output_fd = 1; 
     for (int i = 0; i < num_commands; i++) {
-        char* args[MAX_ARGS];
-        split(commands[i], args);
+        char *args[MAX_ARGS];
+        char cmd_copy[MAX_INPUT];
+        strcpy(cmd_copy, commands[i]);
 
-        int pipefd[2];
-        if (i < num_commands - 1) {
-            if (pipe(pipefd) < 0) {
-                perror("xsh: Pipe creation failed");
+        split(cmd_copy, args);
+
+        if (i == 0 && input_file) {
+            input_fd = open(input_file, O_RDONLY);
+            if (input_fd < 0) {
+                perror("xsh: Cannot open input file");
                 return;
             }
         }
 
-        int output_fd = 1;
         if (i == num_commands - 1 && output_file) {
             output_fd = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (output_fd < 0) {
-                fprintf(stderr, "xsh: Cannot open output file '%s'\n",
-                        output_file);
-                perror("xsh");
+                perror("xsh: Cannot open output file");
                 return;
             }
         }
 
-        // Debugging the arguments for grep
-        printf("Debug: Executing command: '%s'\n", args[0]);
-
-        execute_external(args, bg, input_fd,
-                         (i < num_commands - 1) ? pipefd[1] : output_fd);
-
-        if (i < num_commands - 1) {
+        if (i == num_commands - 1) {
+            execute_external(args, bg, input_fd, output_fd);
+        } else {
+            int pipefd[2];
+            pipe(pipefd);
+            execute_external(args, bg, input_fd, pipefd[1]);
             close(pipefd[1]);
             input_fd = pipefd[0];
         }
-
-        if (output_fd != 1) {
-            close(output_fd);
-        }
     }
 
-    if (input_fd > 0) {
+    if (input_fd != 0) {
         close(input_fd);
+    }
+
+    if (output_fd != 1) {
+        close(output_fd);
     }
 }
